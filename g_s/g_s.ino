@@ -1,45 +1,59 @@
-#include <TaskScheduler.h>  // Substitua com a biblioteca RF real que você está usando
+#include <Arduino_FreeRTOS.h>
 #include <SoftwareSerial.h>
+#include <task.h>
+#include <semphr.h>
 
+SoftwareSerial hc12(10, 11);
+// SemaphoreHandle_t semaforoEnvioPWM;
+int pwmReceived;
+int temperaturaAtual;  // Variável global para armazenar a temperatura medida
 
-SoftwareSerial hc12(10,11);
-Scheduler scheduler;
+void readTemperatureTask(void *pvParameters) {
+  (void)pvParameters;
 
-float temperaturaAtual;  // Variável global para armazenar a temperatura medida
-float pwmRecebido;      // Variável global para armazenar o PWM recebido do segundo microcontrolador
+  for (;;) {
+    temperaturaAtual = analogRead(A0);
+    // Serial.println(temperaturaAtual);
+    // Envie a temperatura via rádio HC-12
+    hc12.write(temperaturaAtual);
 
-void readTemperatureTask() {
-  temperaturaAtual = analogRead(A0);
+    // Atraso de 500ms (0.5 segundo)
+    vTaskDelay(pdMS_TO_TICKS(500));
+  }
 }
 
-void sendTemperatureTask() {
-  hc12.print(temperaturaAtual);
-}
+void sendPWMTask(void *pvParameters) {
+  (void)pvParameters;
 
-void executeReceivedPWMTask() {
-  analogWrite(3, pwmRecebido);
+  for (;;) {
+    // Serial.print("tanana");
+    // Tente receber um valor de PWM do rádio HC-12
+    if (hc12.available() > 0){
+      Serial.println("tanana");
+      pwmReceived = hc12.read();
+      Serial.write(pwmReceived);
+      // Envie o valor de PWM para a porta 3
+      analogWrite(3, pwmReceived);
+    }
+    // Serial.println(pwmReceived);
+    // Atraso de 1000ms (1 segundo)
+    vTaskDelay(pdMS_TO_TICKS(1200));
+  }
 }
-
-void receivePWM(){
-  pwmRecebido = hc12.parseFloat();
-}
-
-Task readTask(5, TASK_FOREVER, &readTemperatureTask);
-Task sendTask(10, TASK_FOREVER, &sendTemperatureTask);
-Task executePWM(20, TASK_FOREVER, &executeReceivedPWMTask);
 
 void setup() {
-
+  Serial.begin(9600);
   hc12.begin(9600);
-  scheduler.init();
-  scheduler.addTask(readTask);
-  scheduler.addTask(sendTask);
-  scheduler.addTask(executePWM);
 
+  // semaforoEnvioPWM = xSemaphoreCreateBinary();
 
-  scheduler.startNow();
+  xTaskCreate(readTemperatureTask, "ReadTemp", 100, NULL, configMAX_PRIORITIES - 1, NULL);
+  xTaskCreate(sendPWMTask, "SendPWM", 100, NULL, 2, NULL);
+
+  vTaskStartScheduler();
 }
 
 void loop() {
-  scheduler.execute();
+  // Este loop não deve ser utilizado com FreeRTOS,
+  // todas as tarefas são gerenciadas pelo sistema operacional
 }
