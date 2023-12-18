@@ -1,47 +1,52 @@
+//Importacao de bibliotecas
 #include <Arduino_FreeRTOS.h>
 #include <FreeRTOSConfig.h>
 #include <queue.h>
 #include <LiquidCrystal_I2C.h>
 #include <semphr.h>
-#include <SoftwareSerial.h>
 #include <timers.h>
 
+
+// Definicao de pinos
 #define SENSOR_PIN A0
 #define PWM_PIN 3
 #define UP_PIN 13
 #define LOW_PIN 12
 #define SETPOINT A1
 
+// Definicao de constantes e variáveis
 float sensorValue = 0.0;
-
-#define QUEUE_SIZE 5
-QueueHandle_t sensorQueue;
-
-float x1 = 0.0;
-float b0 = 0.10243;
-float b1 = 0.005848753;
-float b2 = -0.096581247;
-float a1 = 0.94186, a2 = -0.0574;
+const float x1 = 0.0;
+const float b0 = 0.10243;
+const float b1 = 0.005848753;
+const float b2 = -0.096581247;
+const float a1 = 0.94186, a2 = -0.0574;
 int setpoint = 20;
 float y1 = 0.0;
 static float ek1 = 0, ek2 = 0;
 static float uk1 = 0, uk2 = 0;
 int pwm;
 
-SoftwareSerial hc12(11, 11);
+// Definicao de vetores para guardar os tempos de inicio e fim de tarefas a fim de verificar a funcionalidade do escalonamento
 TickType_t startTimes[3];
 TickType_t endTimes[3];
+
 // Protótipos de funções para as tarefas.
 void taskReadSensor(void *pvParameters);
 void taskController(void *pvParameters);
 void taskSetpoint(void *pvParameters);
-void taskSendData(void *pvParameters);
+
 
 // Timers para as tarefas
 TimerHandle_t xReadSensorTimer, xControllerTimer, xSetpointTimer, xSendDataTimer;
 
+// Vetores de periodizacao de tarefas
+
 const TickType_t PERIODS[] = {pdMS_TO_TICKS(200), pdMS_TO_TICKS(150), pdMS_TO_TICKS(100)};
 const TickType_t DEADLINES[] = {pdMS_TO_TICKS(50), pdMS_TO_TICKS(70), pdMS_TO_TICKS(100)};
+
+
+// Semaforos para acesso a variaveis
 SemaphoreHandle_t xSemaphore;
 SemaphoreHandle_t xSetpointMutex;
 
@@ -81,7 +86,6 @@ void setup() {
 }
 
 void loop() {
-  // O loop não será executado, pois o FreeRTOS cuidará das tarefas.
 }
 
 void setupTimers() {
@@ -100,14 +104,14 @@ void setupTimers() {
   xTimerStart(xReadSensorTimer, 0);
   xTimerStart(xControllerTimer, 0);
   xTimerStart(xSetpointTimer, 0);
-
-
   // Inicie um timer de depuração para verificar se o sistema está rodando
   TimerHandle_t xDebugTimer = xTimerCreate("DebugTimer", pdMS_TO_TICKS(500), pdTRUE, (void *)0, debugCallback);
   xTimerStart(xDebugTimer, 0);
 }
 
 
+
+// Task de leitura do sensor que deve se repetir a cada 200ms
 void taskReadSensor(void *pvParameters) {
   (void)pvParameters;
 
@@ -120,16 +124,14 @@ void taskReadSensor(void *pvParameters) {
       sendData(0, startTimes[0], endTimes[0]);
     }
 
-    vTaskDelay(1); 
+    vTaskDelay(1); // Delay apenas para liberar o processador
   }
 }
 
+
+// Funcao para realizar o calculo do controlador PID
 void calculateControl() {
   float ek0 = (float)setpoint - sensorValue;
-  // Serial.print("Sensor: ");
-  // Serial.println(sensorValue);
-  // Serial.print("Setpoint: ");
-  // Serial.println(setpoint);
   float uk0 = a1 * uk1 + a2 * uk2 + b0 * ek0 + b1 * ek1 + b2 * ek2;
   uk2 = uk1;
   uk1 = uk0;
@@ -143,12 +145,10 @@ void calculateControl() {
   } else if (pwm <= 0) {
     pwm = 0;
   }
-  // Serial.print("PWM: ");
-  // Serial.println(pwm);
   analogWrite(PWM_PIN, pwm);
 }
 
-void taskController(void *pvParameters) {
+void taskController(void *pvParameters) { //Task que executa o calculo do controlador
   (void)pvParameters;
 
   for (;;) {
@@ -164,7 +164,7 @@ void taskController(void *pvParameters) {
   }
 }
 
-void taskSetpoint(void *pvParameters) {
+void taskSetpoint(void *pvParameters) { // Task que coleta a entrada analógica do potenciometro e muda o setpoint da planta
   (void)pvParameters;
 
   for (;;) {
@@ -181,7 +181,7 @@ void taskSetpoint(void *pvParameters) {
   }
 }
 
-void sendData(int taskId, TickType_t startTime, TickType_t endTime) {
+void sendData(int taskId, TickType_t startTime, TickType_t endTime) { // Funcao que serve para enviar os dados de temporizacao para motivos de plotangem
   const TickType_t ticksPerSecond = configTICK_RATE_HZ;
 
   Serial.print("TaskId:");
